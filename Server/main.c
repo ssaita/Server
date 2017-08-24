@@ -29,7 +29,7 @@ int main(){
 	/* クライアントとの接続を確立する*/
 	memset(&client, 0, sizeof(client));
 	len = sizeof(client);
-	acceptfd = accept(sockfd, (struct sockaddr*)&client, &len);
+	acceptfd = accept(sockfd, (struct sockaddr*)&client, (socklen_t *)&len);
 	
 	/* データを読み込む */
 	read (acceptfd, buf, sizeof(buf));
