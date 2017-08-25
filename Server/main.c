@@ -1,47 +1,85 @@
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/uio.h>
-#include <netinet/in.h>
-#include <string.h>
-#include <stdio.h>
-#include <unistd.h>
+#include <stdio.h> //printf(), fprintf(), perror()
+#include <sys/socket.h> //socket(), bind(), accept(), listen()
+#include <arpa/inet.h> // struct sockaddr_in, struct sockaddr, inet_ntoa()
+#include <stdlib.h> //atoi(), exit(), EXIT_FAILURE, EXIT_SUCCESS
+#include <string.h> //memset()
+#include <unistd.h> //close()
 
-int main(){
-	int sockfd, acceptfd;
-	int len;
-	//struct socklen_t len;
-	char buf[1024];
-	struct sockaddr_in server, client;
+#define QUEUELIMIT 5
+#define MSGSIZE 1024
+#define BUFSIZE (MSGSIZE + 1)
+
+int main(int argc, char* argv[]) {
 	
-	/* ソケットを作る */
-	sockfd = socket(PF_INET, SOCK_STREAM, 0);
+	int servSock; //server socket descripter
+	int clitSock; //client socket descripter
+	struct sockaddr_in servSockAddr; //server internet socket address
+	struct sockaddr_in clitSockAddr; //client internet socket address
+	unsigned short servPort; //server port number
+	unsigned int clitLen; // client internet socket address length
+	char recvBuffer[BUFSIZE];//receive temporary buffer
+	int recvMsgSize, sendMsgSize; // recieve and send buffer size
 	
-	/* ソケットを初期化する */
-	memset(&server, 0, sizeof(server));
-	server.sin_family = PF_INET;
-	server.sin_port   = htons(7000);
-	server.sin_addr.s_addr = htonl(INADDR_ANY);
-	bind(sockfd, (struct sockaddr *)&server, sizeof(struct sockaddr_in));
+	if ( argc != 2) {
+		fprintf(stderr, "argument count mismatch error.\n");
+		exit(EXIT_FAILURE);
+	}
 	
-	/* クライアントからの接続を待つ */
-	listen(sockfd, 5);
+	if ((servPort = (unsigned short) atoi(argv[1])) == 0) {
+		fprintf(stderr, "invalid port number.\n");
+		exit(EXIT_FAILURE);
+	}
 	
-	/* クライアントとの接続を確立する*/
-	memset(&client, 0, sizeof(client));
-	len = sizeof(client);
-	acceptfd = accept(sockfd, (struct sockaddr*)&client, (socklen_t *)&len);
+	if ((servSock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0 ){
+		perror("socket() failed.");
+		exit(EXIT_FAILURE);
+	}
 	
-	/* データを読み込む */
-	read (acceptfd, buf, sizeof(buf));
-	printf("accept data: %s\n", buf);
+	memset(&servSockAddr, 0, sizeof(servSockAddr));
+	servSockAddr.sin_family      = AF_INET;
+	servSockAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	servSockAddr.sin_port        = htons(servPort);
 	
-	/* データを書き込む */
-	write (acceptfd, buf, strlen(buf));
+	if (bind(servSock, (struct sockaddr *) &servSockAddr, sizeof(servSockAddr) ) < 0 ) {
+		perror("bind() failed.");
+		exit(EXIT_FAILURE);
+	}
 	
-	/* 接続を閉じる */
-	close(acceptfd);
-	close(sockfd); 
+	if (listen(servSock, QUEUELIMIT) < 0) {
+		perror("listen() failed.");
+		exit(EXIT_FAILURE);
+	}
 	
-	return (0); 
+	while(1) {
+		clitLen = sizeof(clitSockAddr);
+		if ((clitSock = accept(servSock, (struct sockaddr *) &clitSockAddr, &clitLen)) < 0) {
+			perror("accept() failed.");
+			exit(EXIT_FAILURE);
+		}
+		printf("connected from %s.\n", inet_ntoa(clitSockAddr.sin_addr));
+		
+		while(1) {
+			if ((recvMsgSize = recv(clitSock, recvBuffer, BUFSIZE, 0)) < 0) {
+				perror("recv() failed.");
+				exit(EXIT_FAILURE);
+			} else if(recvMsgSize == 0){
+				fprintf(stderr, "connection closed by foreign host.\n");
+				break;
+			}
+			
+			if((sendMsgSize = send(clitSock, recvBuffer, recvMsgSize, 0)) < 0){
+				perror("send() failed.");
+				exit(EXIT_FAILURE);
+			} else if(sendMsgSize == 0){
+				fprintf(stderr, "connection closed by foreign host.\n");
+				break;
+			}
+		}
+		
+		close(clitSock);
+	}
 	
+	close(servSock);
+	
+	return EXIT_SUCCESS;
 }
